@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visium HD 单细胞 RNA 含量评估与质控系统</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #0d6efd;
+      --bg-light: #f8f9fa;
+      --card-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    body {
+      background-color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1e293b;
+    }
+    .navbar {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .card {
+      border: none;
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 1.5rem;
+      background: #ffffff;
+    }
+    .card-header {
+      background: transparent;
+      border-bottom: 1px solid #e2e8f0;
+      font-weight: 600;
+      padding: 1rem 1.25rem;
+    }
+    .upload-zone {
+      border: 2px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      background: #f8fafc;
+      cursor: pointer;
+      transition: all 0.2s ease-in-out;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary-color);
+      background: #eff6ff;
+    }
+    .metric-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.2rem;
+      text-align: center;
+      transition: transform 0.15s ease;
+    }
+    .metric-card:hover {
+      transform: translateY(-2px);
+    }
+    .metric-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.2;
+    }
+    .metric-unit {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+    .metric-label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #475569;
+      margin-bottom: 0.5rem;
+    }
+    .badge-eval {
+      font-size: 1.15rem;
+      padding: 0.5rem 1.2rem;
+      border-radius: 30px;
+      display: inline-block;
+      font-weight: 600;
+    }
+    .eval-better { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+    .eval-moderate { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
+    .eval-poor { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .log-terminal {
+      background: #0f172a;
+      color: #38bdf8;
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+      font-size: 0.82rem;
+      border-radius: 8px;
+      padding: 1rem;
+      max-height: 320px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .table thead th {
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 0.85rem;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark py-3">
+  <div class="container-fluid px-4">
+    <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="/">
+      <i class="bi bi-grid-3x3-gap-fill text-primary"></i>
+      <span>Visium HD 样本切片 RNA / 细胞质控评估平台</span>
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle fs-6 ms-2">Space Ranger 4.1.0</span>
+    </a>
+    <div class="d-flex text-light align-items-center gap-3">
+      <small class="text-secondary"><i class="bi bi-cpu"></i> 192 核 Xeon 8558P | 1TB 内存支持</small>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid px-4 py-4">
+  <div class="row">
+    <!-- Left Column: Input Form & Upload -->
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-sliders2 text-primary me-2"></i>实验定量与切片参数</span>
+          <span class="badge bg-light text-secondary border">Step 2.6 规范</span>
+        </div>
+        <div class="card-body">
+          <form id="qcForm">
+            <!-- Sample Name -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">样本编号 / 名称</label>
+              <input type="text" class="form-control" id="sampleName" placeholder="例如: FFPE_Breast_Cancer_01" value="Sample_01" required>
+            </div>
+
+            <!-- Slice Thickness and Count -->
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">切片厚度 (Thickness)</label>
+                <div class="input-group">
+                  <input type="number" step="0.1" class="form-control" id="sectionThickness" value="5.0" min="0.5" required>
+                  <span class="input-group-text">µm</span>
+                </div>
+                <div class="form-text">10x 官方标准建议为 5 µm</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">提取所用切片张数</label>
+                <div class="input-group">
+                  <input type="number" class="form-control" id="sectionCount" value="2" min="1" required>
+                  <span class="input-group-text">张 (Curls)</span>
+                </div>
+                <div class="form-text">用于提取核酸的卷片数量</div>
+              </div>
+            </div>
+
+            <!-- Qubit Concentration -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Qubit 测定 RNA 浓度</label>
+              <div class="input-group">
+                <input type="number" step="any" class="form-control" id="qubitConc" placeholder="例如: 15.6" required>
+                <select class="form-select" id="qubitUnit" style="max-width: 130px;">
+                  <option value="ng/ul" selected>ng / µL</option>
+                  <option value="ng/ml">ng / mL</option>
+                  <option value="ug/ul">µg / µL</option>
+                  <option value="mg/ul">mg / µL</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Elution Volume -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">洗脱体积 (Elution Volume)</label>
+              <div class="input-group">
+                <input type="number" step="any" class="form-control" id="elutionVol" placeholder="例如: 30" value="30" required>
+                <select class="form-select" id="volumeUnit" style="max-width: 110px;">
+                  <option value="ul" selected>µL</option>
+                  <option value="ml">mL</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Threads -->
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Space Ranger 运算核心数</label>
+              <div class="input-group">
+                <input type="number" class="form-control" id="threads" value="32" min="4" max="192">
+                <span class="input-group-text">Cores</span>
+              </div>
+              <div class="form-text">系统最高支持 192 核并发</div>
+            </div>
+
+            <!-- File Upload with Resumable Chunking -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold d-flex justify-content-between">
+                <span>HE 染色切片图像 (TIFF)</span>
+                <span class="text-muted fw-normal small">支持断点续传 / 大文件分片</span>
+              </label>
+
+              <div id="dropZone" class="upload-zone">
+                <i class="bi bi-cloud-arrow-up text-primary fs-1"></i>
+                <p class="mb-1 mt-2 fw-medium" id="uploadTip">点击或拖拽 HE TIFF 图像至此处</p>
+                <small class="text-muted">支持格式: .tif, .tiff, .btf (BigTIFF), .jpg</small>
+                <input type="file" id="fileInput" class="d-none" accept=".tif,.tiff,.btf,.jpg,.jpeg">
+              </div>
+
+              <!-- Upload Progress UI -->
+              <div id="uploadProgressContainer" class="mt-3 d-none">
+                <div class="d-flex justify-content-between small text-muted mb-1">
+                  <span id="uploadFileName" class="fw-semibold text-truncate" style="max-width: 250px;">-</span>
+                  <span id="uploadStatusText">准备就绪</span>
+                </div>
+                <div class="progress" style="height: 10px;">
+                  <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="d-flex justify-content-between small text-muted mt-1">
+                  <span id="uploadSpeed">-</span>
+                  <span id="uploadProgressPct">0%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" id="submitBtn" class="btn btn-primary w-100 py-2 fw-semibold" disabled>
+              <i class="bi bi-play-circle me-1"></i>开始细胞分割与 RNA 含量评估
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- 10x Official Criteria Guidance Card -->
+      <div class="card">
+        <div class="card-header">
+          <i class="bi bi-book text-primary me-2"></i>10x Genomics 官方评判依据 (Step 2.6)
+        </div>
+        <div class="card-body small">
+          <p class="text-secondary mb-2">
+            根据 10x Genomics 官方《Visium HD FFPE Tissue Preparation Handbook》，通过结合切片提取的 RNA 总量与 HE 图像识别的总细胞数，换算单细胞 RNA 含量：
+          </p>
+          <ul class="list-group list-group-flush mb-3">
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+              <div>
+                <strong class="text-success">&gt; 0.75 pg / cell</strong>
+                <div class="text-muted" style="font-size: 0.8rem;">优质样本 (Better Quality)</div>
+              </div>
+              <span class="badge bg-success-subtle text-success border border-success-subtle">强烈推荐上机</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+              <div>
+                <strong class="text-warning">&ge; 0.4 且 &le; 0.75 pg / cell</strong>
+                <div class="text-muted" style="font-size: 0.8rem;">中等质量 (Moderate Quality)</div>
+              </div>
+              <span class="badge bg-warning-subtle text-warning border border-warning-subtle">谨慎评估上机</span>
+            </li>
+            <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+              <div>
+                <strong class="text-danger">&lt; 0.4 pg / cell</strong>
+                <div class="text-muted" style="font-size: 0.8rem;">高风险样本 (Poor Quality)</div>
+              </div>
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Not Recommended</span>
+            </li>
+          </ul>
+          <div class="text-muted" style="font-size: 0.78rem;">
+            * 注：若切片厚度非 5 µm，系统将根据切片物理体积线性换算并输出 <strong>5 µm 等效归一化值</strong>，以便与 10x 官方标准进行准确比对。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Results, Status & History -->
+    <div class="col-lg-7">
+      <!-- Status & Progress Banner -->
+      <div id="jobStatusCard" class="card d-none">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-activity text-primary me-2"></i>任务分析进程</span>
+          <span id="jobStatusBadge" class="badge bg-info">排队中</span>
+        </div>
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-3 mb-3">
+            <div id="spinnerWrapper" class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <div>
+              <h6 class="mb-1 fw-bold" id="jobStatusTitle">正在调用 Space Ranger 4.1.0 深度学习分割模型...</h6>
+              <div class="text-muted small" id="jobStatusDesc">模型正在分析高分辨率 HE 显微切片中的细胞核特征，请稍候。</div>
+            </div>
+          </div>
+
+          <!-- Terminal Logs -->
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="small fw-semibold text-secondary">运行日志控制台 (Execution Log):</span>
+            <button class="btn btn-sm btn-link text-decoration-none py-0" type="button" onclick="toggleLogs()">切换显示/隐藏</button>
+          </div>
+          <div id="terminalLog" class="log-terminal">等待运行输出...</div>
+        </div>
+      </div>
+
+      <!-- QC Evaluation Report Card -->
+      <div id="qcReportCard" class="card d-none">
+        <div class="card-header d-flex justify-content-between align-items-center bg-light">
+          <span class="fw-bold fs-6"><i class="bi bi-file-earmark-check text-success me-2"></i>10x Visium HD 样本 RNA 质控综合评估报告</span>
+          <span id="reportTime" class="text-muted small">-</span>
+        </div>
+        <div class="card-body">
+          <!-- Grade Header Banner -->
+          <div class="text-center py-3 mb-4 rounded-3" id="gradeBanner" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+            <div class="text-muted small text-uppercase fw-semibold mb-1">10x 官方标准质控评级 (Overall Assessment)</div>
+            <div id="gradeBadge" class="badge-eval eval-better">优质样本 (推荐上机)</div>
+            <div id="gradeSummaryText" class="mt-2 text-secondary px-4 small"></div>
+          </div>
+
+          <!-- Quantitative Metrics Grid -->
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <div class="metric-card">
+                <div class="metric-label">切片总细胞核数 (Nuclei)</div>
+                <div class="metric-value text-primary" id="mNucleiCount">0</div>
+                <div class="metric-unit">Space Ranger 检测</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="metric-card">
+                <div class="metric-label">单张切片 RNA 总量</div>
+                <div class="metric-value" id="mRnaPerSection">0</div>
+                <div class="metric-unit">pg / 5 µm 切片</div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="metric-card">
+                <div class="metric-label">单细胞 RNA 含量</div>
+                <div class="metric-value text-success" id="mRnaPerCell">0</div>
+                <div class="metric-unit">pg / cell (当前厚度)</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Secondary Metrics -->
+          <div class="row g-3 mb-4">
+            <div class="col-md-3">
+              <div class="p-2 border rounded bg-light text-center">
+                <div class="text-muted small">Qubit 测定浓度</div>
+                <div class="fw-bold" id="mQubitConc">-</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="p-2 border rounded bg-light text-center">
+                <div class="text-muted small">总洗脱体积</div>
+                <div class="fw-bold" id="mElutionVol">-</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="p-2 border rounded bg-light text-center">
+                <div class="text-muted small">提取 RNA 总质量</div>
+                <div class="fw-bold" id="mTotalRna">-</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="p-2 border rounded bg-light text-center">
+                <div class="text-muted small">5 µm 标准等效含量</div>
+                <div class="fw-bold text-primary" id="mNorm5um">-</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Evaluation Details & Advice -->
+          <div class="border rounded-3 p-3 bg-white mb-3">
+            <h6 class="fw-bold text-dark mb-2"><i class="bi bi-info-circle text-primary me-2"></i>质控解读与上机建议依据</h6>
+            <p id="recommendationText" class="text-secondary small mb-0" style="line-height: 1.6;"></p>
+          </div>
+
+          <!-- Actions & Links -->
+          <div class="d-flex justify-content-end gap-2 pt-2">
+            <a id="btnWebSummary" href="#" target="_blank" class="btn btn-outline-primary d-none">
+              <i class="bi bi-box-arrow-up-right me-1"></i>查看 Space Ranger Web Summary
+            </a>
+            <button class="btn btn-outline-secondary" onclick="window.print()">
+              <i class="bi bi-printer me-1"></i>打印 / 保存评估报告
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- History Runs Card -->
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-clock-history text-primary me-2"></i>历史评估记录</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadHistoryJobs()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead>
+                <tr>
+                  <th class="ps-3">样本名称</th>
+                  <th>细胞核数</th>
+                  <th>单细胞 RNA</th>
+                  <th>评级</th>
+                  <th>提交时间</th>
+                  <th class="pe-3">操作</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody">
+                <tr>
+                  <td colspan="6" class="text-center py-3 text-muted">暂无历史评估记录</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk
+  let currentFile = null;
+  let fileId = null;
+  let uploadedChunks = new Set();
+  let isUploading = false;
+  let uploadCompleted = false;
+  let pollingInterval = null;
+
+  // Drag and drop setup
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('dragover');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      handleFileSelection(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleFileSelection(e.target.files[0]);
+    }
+  });
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  function handleFileSelection(file) {
+    currentFile = file;
+    // Generate deterministic or unique file ID
+    fileId = 'f_' + file.name.replace(/[^a-zA-Z0-9]/g, '_') + '_' + file.size;
+    uploadedChunks = new Set();
+    uploadCompleted = false;
+
+    document.getElementById('uploadFileName').textContent = file.name + ' (' + formatBytes(file.size) + ')';
+    document.getElementById('uploadProgressContainer').classList.remove('d-none');
+    document.getElementById('uploadTip').textContent = file.name;
+    document.getElementById('submitBtn').disabled = true;
+
+    startResumableUpload();
+  }
+
+  async function startResumableUpload() {
+    if (!currentFile) return;
+    isUploading = true;
+
+    const totalChunks = Math.ceil(currentFile.size / CHUNK_SIZE);
+
+    // 1. Check upload status
+    try {
+      const statusRes = await fetch(`/api/upload/status?file_id=${encodeURIComponent(fileId)}`);
+      const statusData = await statusRes.json();
+
+      if (statusData.completed) {
+        uploadCompleted = true;
+        updateUploadProgress(100, '文件已上传完成 (秒传/已就绪)');
+        document.getElementById('submitBtn').disabled = false;
+        return;
+      }
+
+      if (statusData.uploaded_chunks) {
+        statusData.uploaded_chunks.forEach(idx => uploadedChunks.add(idx));
+      }
+    } catch (err) {
+      console.warn('Status check failed, initializing new upload session:', err);
+    }
+
+    // 2. Initialize upload session
+    await fetch('/api/upload/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_id: fileId,
+        filename: currentFile.name,
+        filesize: currentFile.size,
+        chunk_size: CHUNK_SIZE,
+        total_chunks: totalChunks
+      })
+    });
+
+    // 3. Upload missing chunks
+    let uploadedBytes = uploadedChunks.size * CHUNK_SIZE;
+    let startTime = Date.now();
+
+    for (let i = 0; i < totalChunks; i++) {
+      if (uploadedChunks.has(i)) {
+        continue;
+      }
+
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(currentFile.size, start + CHUNK_SIZE);
+      const chunkBlob = currentFile.slice(start, end);
+
+      const formData = new FormData();
+      formData.append('file_id', fileId);
+      formData.append('chunk_index', i);
+      formData.append('chunk_file', chunkBlob);
+
+      let success = false;
+      let retries = 3;
+      while (!success && retries > 0) {
+        try {
+          const res = await fetch('/api/upload/chunk', { method: 'POST', body: formData });
+          if (res.ok) {
+            success = true;
+            uploadedChunks.add(i);
+            uploadedBytes += (end - start);
+
+            const pct = Math.min(99, Math.round((uploadedChunks.size / totalChunks) * 100));
+            const elapsed = (Date.now() - startTime) / 1000;
+            const speed = elapsed > 0 ? (uploadedBytes / elapsed) : 0;
+            updateUploadProgress(pct, `分片上传中 (${uploadedChunks.size}/${totalChunks})`, formatBytes(speed) + '/s');
+          } else {
+            retries--;
+          }
+        } catch (e) {
+          retries--;
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      if (!success) {
+        updateUploadProgress(0, '分片上传失败，请检查网络后重试');
+        return;
+      }
+    }
+
+    // 4. Finish and assemble file
+    updateUploadProgress(99, '分片组装合并中...');
+    const finishForm = new FormData();
+    finishForm.append('file_id', fileId);
+    const finishRes = await fetch('/api/upload/finish', { method: 'POST', body: finishForm });
+    if (finishRes.ok) {
+      uploadCompleted = true;
+      updateUploadProgress(100, '上传组装成功，准备就绪');
+      document.getElementById('submitBtn').disabled = false;
+    } else {
+      updateUploadProgress(0, '组装失败');
+    }
+  }
+
+  function updateUploadProgress(pct, statusText, speed = '') {
+    document.getElementById('uploadProgressBar').style.width = pct + '%';
+    document.getElementById('uploadProgressPct').textContent = pct + '%';
+    if (statusText) document.getElementById('uploadStatusText').textContent = statusText;
+    if (speed) document.getElementById('uploadSpeed').textContent = speed;
+  }
+
+  // Form submit
+  document.getElementById('qcForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!uploadCompleted) {
+      alert('请等待 HE TIFF 图片上传完成！');
+      return;
+    }
+
+    const payload = {
+      file_id: fileId,
+      filename: currentFile.name,
+      sample_name: document.getElementById('sampleName').value,
+      section_thickness_um: parseFloat(document.getElementById('sectionThickness').value),
+      section_count: parseInt(document.getElementById('sectionCount').value),
+      qubit_concentration: parseFloat(document.getElementById('qubitConc').value),
+      qubit_unit: document.getElementById('qubitUnit').value,
+      elution_volume: parseFloat(document.getElementById('elutionVol').value),
+      volume_unit: document.getElementById('volumeUnit').value,
+      threads: parseInt(document.getElementById('threads').value)
+    };
+
+    document.getElementById('submitBtn').disabled = true;
+    document.getElementById('jobStatusCard').classList.remove('d-none');
+    document.getElementById('qcReportCard').classList.add('d-none');
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        startPollingJob(data.job_id);
+      } else {
+        alert('提交失败: ' + (data.detail || '未知错误'));
+        document.getElementById('submitBtn').disabled = false;
+      }
+    } catch (err) {
+      alert('网络提交异常: ' + err);
+      document.getElementById('submitBtn').disabled = false;
+    }
+  });
+
+  function startPollingJob(jobId) {
+    if (pollingInterval) clearInterval(pollingInterval);
+
+    pollingInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/job/${jobId}`);
+        const data = await res.json();
+        const job = data.job;
+
+        document.getElementById('terminalLog').textContent = data.latest_logs || '正在启动 Space Ranger 运算...';
+        const logBox = document.getElementById('terminalLog');
+        logBox.scrollTop = logBox.scrollHeight;
+
+        if (job.status === 'running') {
+          document.getElementById('jobStatusBadge').className = 'badge bg-primary';
+          document.getElementById('jobStatusBadge').textContent = '计算中';
+        } else if (job.status === 'completed') {
+          clearInterval(pollingInterval);
+          document.getElementById('jobStatusBadge').className = 'badge bg-success';
+          document.getElementById('jobStatusBadge').textContent = '已完成';
+          document.getElementById('spinnerWrapper').classList.add('d-none');
+          document.getElementById('jobStatusTitle').textContent = '细胞分割与 RNA 含量评估完成！';
+          document.getElementById('submitBtn').disabled = false;
+          renderResults(job);
+          loadHistoryJobs();
+        } else if (job.status === 'failed') {
+          clearInterval(pollingInterval);
+          document.getElementById('jobStatusBadge').className = 'badge bg-danger';
+          document.getElementById('jobStatusBadge').textContent = '分析失败';
+          document.getElementById('spinnerWrapper').classList.add('d-none');
+          document.getElementById('jobStatusTitle').textContent = '分析发生异常';
+          document.getElementById('jobStatusDesc').textContent = job.error || '详见控制台日志';
+          document.getElementById('submitBtn').disabled = false;
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    }, 2500);
+  }
+
+  function renderResults(job) {
+    const res = job.results;
+    if (!res) return;
+
+    document.getElementById('qcReportCard').classList.remove('d-none');
+    document.getElementById('reportTime').textContent = new Date(job.completed_at * 1000).toLocaleString();
+
+    // Badge
+    const badgeEl = document.getElementById('gradeBadge');
+    badgeEl.textContent = res.qc_grade_cn;
+    badgeEl.className = 'badge-eval ' + (res.qc_grade === 'Better' ? 'eval-better' : (res.qc_grade === 'Moderate' ? 'eval-moderate' : 'eval-poor'));
+
+    document.getElementById('gradeSummaryText').textContent =
+      `当前样本单细胞 RNA 含量为 ${res.rna_per_cell_actual_pg} pg/cell (归一化至 5 µm 标准切片为 ${res.rna_per_cell_norm5um_pg} pg/cell)`;
+
+    document.getElementById('mNucleiCount').textContent = res.nuclei_count.toLocaleString();
+    document.getElementById('mRnaPerSection').textContent = res.rna_per_section_pg.toLocaleString();
+    document.getElementById('mRnaPerCell').textContent = res.rna_per_cell_actual_pg;
+
+    document.getElementById('mQubitConc').textContent = `${res.conc_ng_ul} ng/µL`;
+    document.getElementById('mElutionVol').textContent = `${res.vol_ul} µL`;
+    document.getElementById('mTotalRna').textContent = `${res.total_rna_ng} ng (${res.total_rna_pg} pg)`;
+    document.getElementById('mNorm5um').textContent = `${res.rna_per_cell_norm5um_pg} pg/cell`;
+
+    document.getElementById('recommendationText').textContent = res.recommendation;
+
+    const webSummaryBtn = document.getElementById('btnWebSummary');
+    if (res.web_summary_url) {
+      webSummaryBtn.href = res.web_summary_url;
+      webSummaryBtn.classList.remove('d-none');
+    } else {
+      webSummaryBtn.classList.add('d-none');
+    }
+  }
+
+  function toggleLogs() {
+    const logBox = document.getElementById('terminalLog');
+    logBox.style.display = (logBox.style.display === 'none') ? 'block' : 'none';
+  }
+
+  async function loadHistoryJobs() {
+    try {
+      const res = await fetch('/api/jobs');
+      const data = await res.json();
+      const tbody = document.getElementById('historyTableBody');
+      tbody.innerHTML = '';
+
+      if (!data.jobs || data.jobs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">暂无历史评估记录</td></tr>';
+        return;
+      }
+
+      data.jobs.slice().reverse().forEach(job => {
+        const tr = document.createElement('tr');
+        const res = job.results;
+        const timeStr = new Date(job.created_at * 1000).toLocaleDateString() + ' ' + new Date(job.created_at * 1000).toLocaleTimeString();
+
+        let badgeHtml = '<span class="badge bg-secondary">处理中</span>';
+        let nucleiStr = '-';
+        let rnaCellStr = '-';
+
+        if (res) {
+          nucleiStr = res.nuclei_count.toLocaleString();
+          rnaCellStr = `${res.rna_per_cell_actual_pg} pg`;
+          if (res.qc_grade === 'Better') badgeHtml = '<span class="badge bg-success">优质</span>';
+          else if (res.qc_grade === 'Moderate') badgeHtml = '<span class="badge bg-warning text-dark">中等</span>';
+          else badgeHtml = '<span class="badge bg-danger">高风险</span>';
+        } else if (job.status === 'failed') {
+          badgeHtml = '<span class="badge bg-danger">失败</span>';
+        }
+
+        tr.innerHTML = `
+          <td class="ps-3 fw-medium">${job.sample_name || job.job_id}</td>
+          <td>${nucleiStr}</td>
+          <td>${rnaCellStr}</td>
+          <td>${badgeHtml}</td>
+          <td class="small text-muted">${timeStr}</td>
+          <td class="pe-3">
+            <button class="btn btn-sm btn-outline-primary py-0" onclick="viewJobHistory('${job.job_id}')">查看</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (e) {
+      console.error('Failed to load history:', e);
+    }
+  }
+
+  async function viewJobHistory(jobId) {
+    const res = await fetch(`/api/job/${jobId}`);
+    const data = await res.json();
+    if (data.job) {
+      document.getElementById('jobStatusCard').classList.remove('d-none');
+      document.getElementById('terminalLog').textContent = data.latest_logs || '历史任务记录';
+      if (data.job.results) {
+        renderResults(data.job);
+      }
+    }
+  }
+
+  // Initial load
+  loadHistoryJobs();
+</script>
+</body>
+</html>
