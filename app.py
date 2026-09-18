@@ -25,9 +25,21 @@ from converter import auto_convert_to_bigtiff, is_already_supported_format
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-UPLOADS_DIR = BASE_DIR / "uploads"
-RUNS_DIR = BASE_DIR / "runs"
-JOBS_FILE = BASE_DIR / "jobs.json"
+
+# Dynamic data directory configuration:
+# 1. Environment variable VISIUM_QC_DATA_DIR or DATA_DIR
+# 2. Default fallback: /mnt/ktdb2/yls/10x/visium_qc_app if exists/writable, else BASE_DIR
+env_data_dir = os.environ.get("VISIUM_QC_DATA_DIR") or os.environ.get("DATA_DIR")
+if env_data_dir:
+    DATA_DIR = Path(env_data_dir)
+elif Path("/mnt/ktdb2/yls/10x/visium_qc_app").exists() and os.access("/mnt/ktdb2/yls/10x/visium_qc_app", os.W_OK):
+    DATA_DIR = Path("/mnt/ktdb2/yls/10x/visium_qc_app")
+else:
+    DATA_DIR = BASE_DIR
+
+UPLOADS_DIR = DATA_DIR / "uploads"
+RUNS_DIR = DATA_DIR / "runs"
+JOBS_FILE = DATA_DIR / "jobs.json"
 
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
@@ -486,9 +498,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Visium HD RNA Quantity QC Web Platform")
     parser.add_argument("--host", default="0.0.0.0", help="Host address to bind")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 20100)), help="Port to listen on")
+    parser.add_argument("--data-dir", default=str(DATA_DIR), help="Root directory for uploads and runs")
     parser.add_argument("--workers", type=int, default=1, help="Number of worker processes")
     args = parser.parse_args()
 
+    if args.data_dir:
+        os.environ["DATA_DIR"] = args.data_dir
+
     print(f"[*] Starting Visium HD RNA QC Platform on http://{args.host}:{args.port}")
+    print(f"[*] Data storage directory: {args.data_dir}")
     print(f"[*] Resolved Space Ranger binary: {SPACERANGER_BIN}")
     uvicorn.run("app:app", host=args.host, port=args.port, workers=args.workers)

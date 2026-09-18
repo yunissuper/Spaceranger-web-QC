@@ -68,12 +68,12 @@ chmod +x setup.sh
 
 #### 引导步骤概览：
 1. **系统环境检测**：检查 CPU 核心、内存（建议 $\ge 32\text{GB}$）与磁盘可用空间；
-2. **Python 环境检测**：自动安装 FastAPI、Uvicorn 等必要依赖；
+2. **Python 环境检测**：自动安装 FastAPI、Uvicorn 等必要依赖与切片解码工具；
 3. **Space Ranger 部署引导**：
    - 自动检测已有 Space Ranger；
    - 若未安装，输出 10x 官方协议下载地址：[10x Genomics Space Ranger Downloads](https://www.10xgenomics.com/support/software/space-ranger/downloads)；
    - 粘贴官网生成的带 Token 下载链接或本地 `.tar.gz` 路径，脚本自动下载解压并加入环境；
-4. **端口与网络配置**：交互式设定监听端口（默认 `20100`）；
+4. **端口与存储路径配置**：交互式设定监听端口（默认 `20100`）及大容量数据存储目录（`DATA_DIR`，用于存放切片上传与分析结果）；
 5. **服务启动**：提供前台运行、后台守护进程 (nohup) 或注册为 Linux Systemd 用户服务。
 
 ---

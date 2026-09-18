@@ -181,9 +181,9 @@ fi
 echo ""
 
 # ------------------------------------------------------------------------------
-# Step 4: Web Port Configuration
+# Step 4: Web Port and Data Directory Configuration
 # ------------------------------------------------------------------------------
-echo -e "${BLUE}${BOLD}[Step 4/5] 服务端口与网络配置...${NC}"
+echo -e "${BLUE}${BOLD}[Step 4/5] 服务端口与数据存储路径配置...${NC}"
 
 DEFAULT_PORT=20100
 read -r -p "  请输入 Web 服务监听端口 [默认: ${DEFAULT_PORT}]: " WEB_PORT
@@ -199,7 +199,17 @@ if ss -tuln | grep -q ":${WEB_PORT} "; then
     fi
 fi
 
-echo -e "  服务监听端口设定为: ${GREEN}${WEB_PORT}${NC}\n"
+# Configure Data Storage Directory
+DEFAULT_DATA_DIR="$ROOT_DIR"
+if [ -d "/mnt/ktdb2/yls/10x/visium_qc_app" ] && [ -w "/mnt/ktdb2/yls/10x/visium_qc_app" ]; then
+    DEFAULT_DATA_DIR="/mnt/ktdb2/yls/10x/visium_qc_app"
+fi
+read -r -p "  请输入大文件上传与结果数据存储目录 [默认: ${DEFAULT_DATA_DIR}]: " USER_DATA_DIR
+USER_DATA_DIR="${USER_DATA_DIR:-$DEFAULT_DATA_DIR}"
+mkdir -p "$USER_DATA_DIR/uploads" "$USER_DATA_DIR/runs"
+
+echo -e "  服务监听端口设定为: ${GREEN}${WEB_PORT}${NC}"
+echo -e "  数据存储目录设定为: ${GREEN}${USER_DATA_DIR}${NC}\n"
 
 # ------------------------------------------------------------------------------
 # Step 5: Service Launch Mode
@@ -229,7 +239,7 @@ print_access_urls() {
 
 if [ "$RUN_MODE" = "2" ]; then
     echo -e "  正在后台启动服务..."
-    PORT="$WEB_PORT" SPACERANGER_BIN="$SPACERANGER_BIN" nohup "$PYTHON_BIN" app.py --port "$WEB_PORT" > server.log 2>&1 &
+    DATA_DIR="$USER_DATA_DIR" PORT="$WEB_PORT" SPACERANGER_BIN="$SPACERANGER_BIN" nohup "$PYTHON_BIN" app.py --port "$WEB_PORT" --data-dir "$USER_DATA_DIR" > server.log 2>&1 &
     PID=$!
     echo -e "  ${GREEN}服务已在后台运行 (PID: $PID)，日志保存在 server.log${NC}"
     print_access_urls
@@ -244,11 +254,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${PYTHON_BIN} ${ROOT_DIR}/app.py --port ${WEB_PORT}
+ExecStart=${PYTHON_BIN} ${ROOT_DIR}/app.py --port ${WEB_PORT} --data-dir ${USER_DATA_DIR}
 WorkingDirectory=${ROOT_DIR}
 Restart=always
 RestartSec=3
 Environment=PORT=${WEB_PORT}
+Environment=DATA_DIR=${USER_DATA_DIR}
 Environment=SPACERANGER_BIN=${SPACERANGER_BIN}
 
 [Install]
@@ -261,5 +272,5 @@ EOF
 else
     print_access_urls
     echo -e "${YELLOW}正在前台启动服务，按 Ctrl+C 可停止运行...${NC}\n"
-    PORT="$WEB_PORT" SPACERANGER_BIN="$SPACERANGER_BIN" exec "$PYTHON_BIN" app.py --port "$WEB_PORT"
+    DATA_DIR="$USER_DATA_DIR" PORT="$WEB_PORT" SPACERANGER_BIN="$SPACERANGER_BIN" exec "$PYTHON_BIN" app.py --port "$WEB_PORT" --data-dir "$USER_DATA_DIR"
 fi
