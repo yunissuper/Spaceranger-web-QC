@@ -8,23 +8,32 @@ Converts scanner output formats (.svs, .sdpc) to Space Ranger-compatible BigTIFF
 import os
 import sys
 import gc
+import json
 import math
+import subprocess
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 
-# Add opensdpc library paths to LD_LIBRARY_PATH if available
-def _setup_opensdpc_env():
-    for p in sys.path:
+
+def get_opensdpc_ld_paths() -> List[str]:
+    """Locate opensdpc and helper shared library directories."""
+    paths = []
+    # Search all sys.path and standard site-packages
+    candidate_roots = list(sys.path) + [
+        str(Path.home() / ".local/lib/python3.10/site-packages"),
+        str(Path.home() / "miniconda3/lib/python3.13/site-packages"),
+        "/usr/local/lib/python3.10/dist-packages",
+        "/usr/lib/python3/dist-packages"
+    ]
+    for p in candidate_roots:
         sdpc_linux = Path(p) / "opensdpc" / "LINUX"
         if sdpc_linux.exists():
             ffmpeg_path = sdpc_linux / "ffmpeg"
             jpeg_path = sdpc_linux / "jpeg"
-            curr_ld = os.environ.get("LD_LIBRARY_PATH", "")
-            new_ld = f"{sdpc_linux}:{ffmpeg_path}:{jpeg_path}:{curr_ld}"
-            os.environ["LD_LIBRARY_PATH"] = new_ld
-            break
-
-_setup_opensdpc_env()
+            for d in [sdpc_linux, ffmpeg_path, jpeg_path]:
+                if d.exists() and str(d) not in paths:
+                    paths.append(str(d))
+    return paths
 
 
 def is_already_supported_format(filename_or_path: str) -> bool:
@@ -41,7 +50,7 @@ def convert_svs_to_bigtiff(
 ) -> str:
     """
     Losslessly convert Aperio SVS whole slide image to pyramidal BigTIFF (.btf).
-    Preserves full level 0 resolution and tile structure.
+    Preserves full level 0 resolution.
     """
     import tifffile
     import numpy as np
@@ -49,42 +58,25 @@ def convert_svs_to_bigtiff(
     if progress_cb:
         progress_cb(0.05, "Opening SVS whole slide image...")
 
-    # Aperio SVS is fundamentally a tiled multi-page TIFF
     with tifffile.TiffFile(input_path) as svs:
-        # Series 0 is the full-resolution primary scan
         series = svs.series[0]
         full_page = series.pages[0]
-        
+
         height, width = full_page.shape[:2]
         channels = full_page.shape[2] if len(full_page.shape) > 2 else 1
         dtype = full_page.dtype
 
         description = full_page.description or ""
-        tags = {}
-        for tag in full_page.tags.values():
-            if tag.name in ["ResolutionUnit", "XResolution", "YResolution"]:
-                tags[tag.name] = tag.value
 
         if progress_cb:
             progress_cb(0.15, f"Reading Level 0 ({width}x{height}, {channels}ch)...")
 
-        # Check if we can read tiled directly or stream
         with tifffile.TiffWriter(output_path, bigtiff=True) as tif_out:
-            # For moderate images or large RAM systems, we stream or tile-by-tile
-            # Our server has 1TB RAM, so reading full array into memory or sub-regions is safe and fast
-            # Process in vertical stripes to stay memory-efficient on any system
-            stripe_height = 4096
-            num_stripes = math.ceil(height / stripe_height)
-            
-            full_canvas = np.zeros((height, width, channels), dtype=dtype)
-            
-            # Read all series pages or memory-mapped
             slide_data = series.asarray()
-            
-            if progress_cb:
-                progress_cb(0.60, f"Encoding into Pyramidal BigTIFF (JPEG/Deflate)...")
 
-            # Write standard BigTIFF with subIFDs pyramid
+            if progress_cb:
+                progress_cb(0.60, "Encoding into Pyramidal BigTIFF (JPEG compression)...")
+
             tif_out.write(
                 slide_data,
                 tile=(tile_size, tile_size),
@@ -99,16 +91,13 @@ def convert_svs_to_bigtiff(
     return output_path
 
 
-def convert_sdpc_to_bigtiff(
+def convert_sdpc_to_bigtiff_internal(
     input_path: str,
     output_path: str,
     tile_size: int = 1024,
     progress_cb: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    """
-    Losslessly convert Shengqiang/Sqray SDPC slide image to BigTIFF (.btf).
-    Uses opensdpc API to extract level 0 tiles and reassemble.
-    """
+    """Internal implementation of SDPC converter inside a subprocess with proper LD_LIBRARY_PATH."""
     import tifffile
     import numpy as np
 
@@ -117,8 +106,8 @@ def convert_sdpc_to_bigtiff(
 
     try:
         from opensdpc.OpenSdpc import OpenSdpc
-    except ImportError:
-        raise RuntimeError("opensdpc is not installed or shared libraries not found. Please install opensdpc.")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load OpenSdpc library: {e}")
 
     sdpc = OpenSdpc(input_path)
     dims = sdpc.level_dimensions
@@ -127,8 +116,6 @@ def convert_sdpc_to_bigtiff(
     if progress_cb:
         progress_cb(0.10, f"Detected SDPC Level 0 resolution: {w} x {h}")
 
-    # Stream regions into BigTIFF
-    # Read in tiles of 2048x2048 to minimize JNI/ctypes overhead
     step = 2048
     canvas = np.zeros((h, w, 3), dtype=np.uint8)
 
@@ -144,8 +131,9 @@ def convert_sdpc_to_bigtiff(
             canvas[y:y+cur_h, x:x+cur_w] = roi_np[:cur_h, :cur_w, :3]
 
             block_idx += 1
-            if progress_cb and block_idx % 10 == 0:
-                progress_cb(0.10 + 0.65 * (block_idx / total_blocks), f"Decoding tiles ({block_idx}/{total_blocks})...")
+            if progress_cb and (block_idx % 10 == 0 or block_idx == total_blocks):
+                pct = 0.10 + 0.65 * (block_idx / total_blocks)
+                progress_cb(pct, f"Decoding tiles ({block_idx}/{total_blocks})...")
 
     if progress_cb:
         progress_cb(0.80, "Writing Pyramidal BigTIFF...")
@@ -164,6 +152,64 @@ def convert_sdpc_to_bigtiff(
 
     if progress_cb:
         progress_cb(1.0, "SDPC to BigTIFF conversion completed.")
+
+    return output_path
+
+
+def run_isolated_subprocess_conversion(
+    input_path: str,
+    output_path: str,
+    progress_cb: Optional[Callable[[float, str], None]] = None
+) -> str:
+    """Run converter in an isolated subprocess with LD_LIBRARY_PATH configured."""
+    ld_paths = get_opensdpc_ld_paths()
+    env = os.environ.copy()
+    existing_ld = env.get("LD_LIBRARY_PATH", "")
+    new_ld = ":".join(ld_paths)
+    if existing_ld:
+        new_ld = f"{new_ld}:{existing_ld}"
+    env["LD_LIBRARY_PATH"] = new_ld
+
+    # Locate best python interpreter with opensdpc installed
+    py_bin = sys.executable
+    converter_script = str(Path(__file__).resolve())
+
+    cmd = [
+        py_bin, converter_script,
+        "--input", input_path,
+        "--output", output_path,
+        "--worker"
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env
+    )
+
+    for line in iter(proc.stdout.readline, ""):
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if line_str.startswith("PROGRESS:"):
+            try:
+                parts = line_str.split(":", 2)
+                pct = float(parts[1])
+                msg = parts[2]
+                if progress_cb:
+                    progress_cb(pct, msg)
+            except Exception:
+                pass
+        else:
+            if progress_cb:
+                progress_cb(0.5, line_str)
+
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Subprocess conversion failed with exit code {proc.returncode}")
 
     return output_path
 
@@ -194,10 +240,9 @@ def auto_convert_to_bigtiff(
         return convert_svs_to_bigtiff(str(inp), str(out_file), progress_cb=progress_cb)
     elif ext == ".sdpc":
         if progress_cb:
-            progress_cb(0.01, f"Detected Sqray SDPC format. Launching lossless BigTIFF converter...")
-        return convert_sdpc_to_bigtiff(str(inp), str(out_file), progress_cb=progress_cb)
+            progress_cb(0.01, f"Detected Sqray SDPC format. Launching isolated BigTIFF converter...")
+        return run_isolated_subprocess_conversion(str(inp), str(out_file), progress_cb=progress_cb)
     elif ext == ".csp":
-        # .csp typically wraps or pairs with svs/sdpc or can be processed via openslide/svs parser
         raise NotImplementedError(
             f"Format {ext} requires conversion to SVS or TIFF in scanner software first. "
             "Please export as .svs or .sdpc from your scanner client."
@@ -206,3 +251,23 @@ def auto_convert_to_bigtiff(
         raise ValueError(
             f"Unsupported file format: {ext}. Supported formats: .tif, .btf, .tiff, .svs, .sdpc, .jpg"
         )
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True, help="Input slide image path")
+    parser.add_argument("--output", required=True, help="Output BigTIFF path")
+    parser.add_argument("--worker", action="store_true", help="Run in worker mode")
+    args = parser.parse_args()
+
+    def report_progress(pct: float, msg: str):
+        print(f"PROGRESS:{pct:.2f}:{msg}", flush=True)
+
+    input_ext = Path(args.input).suffix.lower()
+    if input_ext == ".sdpc":
+        convert_sdpc_to_bigtiff_internal(args.input, args.output, progress_cb=report_progress)
+    elif input_ext == ".svs":
+        convert_svs_to_bigtiff(args.input, args.output, progress_cb=report_progress)
+    else:
+        report_progress(1.0, f"No conversion needed for {args.input}")
