@@ -21,6 +21,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from converter import auto_convert_to_bigtiff, is_already_supported_format
+
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -248,8 +250,35 @@ def run_segmentation_task(job_id: str):
     run_dir = RUNS_DIR / job_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    image_path = Path(job["image_path"])
+    raw_image_path = Path(job["image_path"])
     log_file = run_dir / "execution.log"
+
+    # Pre-processing: Check if image requires format conversion (.svs, .sdpc, etc.)
+    with open(log_file, "w", encoding="utf-8") as log_f:
+        log_f.write(f"=== Visium HD Pre-Analysis Phase ===\n")
+        log_f.write(f"Input file: {raw_image_path.name}\n")
+        log_f.flush()
+
+        try:
+            def log_progress(pct: float, msg: str):
+                log_f.write(f"[{int(pct * 100)}%] {msg}\n")
+                log_f.flush()
+
+            image_path = Path(auto_convert_to_bigtiff(
+                str(raw_image_path),
+                output_dir=str(run_dir),
+                progress_cb=log_progress
+            ))
+            log_f.write(f"Validated Space Ranger input image: {image_path.name}\n\n")
+            log_f.flush()
+        except Exception as conv_err:
+            log_f.write(f"Format conversion error: {conv_err}\n")
+            log_f.flush()
+            job["status"] = "failed"
+            job["error"] = f"Image format conversion failed: {conv_err}"
+            job["completed_at"] = time.time()
+            save_jobs()
+            return
 
     env = os.environ.copy()
     spaceranger_exec = find_spaceranger_bin()
@@ -264,7 +293,7 @@ def run_segmentation_task(job_id: str):
         "--localmem=64"
     ]
 
-    with open(log_file, "w", encoding="utf-8") as log_f:
+    with open(log_file, "a", encoding="utf-8") as log_f:
         log_f.write(f"=== Space Ranger Segment Execution Started ===\n")
         log_f.write(f"Binary: {spaceranger_exec}\n")
         log_f.write(f"Command: {' '.join(cmd)}\n")

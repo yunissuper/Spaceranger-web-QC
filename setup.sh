@@ -71,7 +71,7 @@ PY_VERSION="$("$PYTHON_BIN" -c 'import sys; print(".".join(map(str, sys.version_
 echo -e "  Python 解析器: ${GREEN}${PYTHON_BIN} (v${PY_VERSION})${NC}"
 
 # Check and install python packages
-echo -e "  正在检测并安装平台依赖 (fastapi, uvicorn, python-multipart, pydantic)..."
+echo -e "  正在检测并安装平台与图像转码依赖 (fastapi, tifffile, openslide, opensdpc 等)..."
 "$PYTHON_BIN" -m pip install -q --upgrade pip 2>/dev/null || true
 "$PYTHON_BIN" -m pip install -q -r "$ROOT_DIR/requirements.txt" || {
     echo -e "  ${YELLOW}用户权限安装依赖...${NC}"

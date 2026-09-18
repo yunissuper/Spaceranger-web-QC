@@ -24,9 +24,16 @@ This document outlines the technical architecture, mathematical modeling, and RE
                                 |                   |
                                 v                   v
                       +---------+----+    +---------+---------+
-                      | Upload Cache |    | Space Ranger 4.x  |
-                      | (TIFF / BTF) |    | (StarDist Segment)|
+                      | Upload Cache |    | Lossless WSI      |
+                      | (TIFF/SVS/   |--->| Converter         |
+                      |  SDPC/BTF)   |    | (SVS/SDPC -> BTF) |
                       +--------------+    +---------+---------+
+                                                    |
+                                                    v
+                                          +---------+---------+
+                                          | Space Ranger 4.x  |
+                                          | (StarDist Segment)|
+                                          +---------+---------+
                                                     |
                                           Metrics Extraction
                                           & 10x QC Evaluation

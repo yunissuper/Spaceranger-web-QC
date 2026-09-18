@@ -197,15 +197,16 @@
             <!-- File Upload with Resumable Chunking -->
             <div class="mb-4">
               <label class="form-label fw-semibold d-flex justify-content-between">
-                <span>HE 染色切片图像 (TIFF)</span>
+                <span>HE 染色切片显微图像</span>
                 <span class="text-muted fw-normal small">支持断点续传 / 大文件分片</span>
               </label>
 
               <div id="dropZone" class="upload-zone">
                 <i class="bi bi-cloud-arrow-up text-primary fs-1"></i>
-                <p class="mb-1 mt-2 fw-medium" id="uploadTip">点击或拖拽 HE TIFF 图像至此处</p>
-                <small class="text-muted">支持格式: .tif, .tiff, .btf (BigTIFF), .jpg</small>
-                <input type="file" id="fileInput" class="d-none" accept=".tif,.tiff,.btf,.jpg,.jpeg">
+                <p class="mb-1 mt-2 fw-medium" id="uploadTip">点击或拖拽 HE 切片图像至此处</p>
+                <small class="text-muted">原生支持: <code>.tif</code>, <code>.tiff</code>, <code>.btf</code>, <code>.svs</code>, <code>.sdpc</code></small>
+                <div class="mt-1"><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle" style="font-size: 0.75rem;"><i class="bi bi-magic me-1"></i>SVS / SDPC 自动触发无损 BigTIFF 转换管道</span></div>
+                <input type="file" id="fileInput" class="d-none" accept=".tif,.tiff,.btf,.svs,.sdpc,.jpg,.jpeg">
               </div>
 
               <!-- Upload Progress UI -->
