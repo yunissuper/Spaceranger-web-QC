@@ -116,7 +116,7 @@ def convert_sdpc_to_bigtiff_internal(
     if progress_cb:
         progress_cb(0.10, f"Detected SDPC Level 0 resolution: {w} x {h}")
 
-    step = 2048
+    step = 4096
     canvas = np.zeros((h, w, 3), dtype=np.uint8)
 
     total_blocks = math.ceil(h / step) * math.ceil(w / step)
@@ -131,7 +131,7 @@ def convert_sdpc_to_bigtiff_internal(
             canvas[y:y+cur_h, x:x+cur_w] = roi_np[:cur_h, :cur_w, :3]
 
             block_idx += 1
-            if progress_cb and (block_idx % 10 == 0 or block_idx == total_blocks):
+            if progress_cb and (block_idx % 5 == 0 or block_idx == total_blocks):
                 pct = 0.10 + 0.65 * (block_idx / total_blocks)
                 progress_cb(pct, f"Decoding tiles ({block_idx}/{total_blocks})...")
 
